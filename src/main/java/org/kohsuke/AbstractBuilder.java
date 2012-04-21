@@ -54,6 +54,7 @@ import java.lang.invoke.MethodHandle;
 import java.lang.invoke.MethodHandles;
 import java.lang.reflect.Method;
 import java.lang.reflect.Modifier;
+import java.util.Collection;
 
 import static java.lang.invoke.MethodHandles.*;
 import static java.lang.invoke.MethodType.*;
@@ -80,6 +81,10 @@ public class AbstractBuilder implements ParserVisitor {
     protected NoSuchMethodError handle(NoSuchMethodException e) {
         return (NoSuchMethodError)new NoSuchMethodError(e.getMessage()).initCause(e);
     }
+
+//    protected MethodHandle filterArguments(MethodHandle base, int pos, Collection<? extends MethodHandle> filters) {
+//        return MethodHandles.filterArguments(base,pos,filters.toArray(new MethodHandle[filters.size()]));
+//    }
 
     protected MethodHandle findStatic(String name) {
         // TODO: cache the result

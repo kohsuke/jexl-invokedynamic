@@ -63,7 +63,7 @@ import java.util.Map;
 import static java.lang.invoke.MethodHandles.*;
 
 /**
- * {@link ParserVisitor} that builds {@link MethodHandle}.
+ * {@link ParserVisitor} that builds {@link MethodHandle} of the type {@code JexlContext -> Object}
  *
  * TODO: needs to be combined with the byte code generator
  * MethodHandle composers aren't powerful enough to cover the whole expression,
@@ -473,7 +473,13 @@ public class Builder extends AbstractBuilder {
     }
 
     public Object visit(ASTReference node, Object data) {
-        return executeBuilder.build(node);
+        // lhs.id1.id2  => id2(context,id1(context,lhs(context)))
+        MethodHandle r = child(node,0);
+        for (int i=1; i<node.jjtGetNumChildren(); i++) {
+            r = foldArguments(executeBuilder.build(node.jjtGetChild(i)),r);
+        }
+        
+        return r;
     }
 
 

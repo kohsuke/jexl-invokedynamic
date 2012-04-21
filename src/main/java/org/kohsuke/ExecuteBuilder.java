@@ -16,7 +16,7 @@ import static java.lang.invoke.MethodHandles.*;
 import static java.lang.invoke.MethodType.*;
 
 /**
- * Generates {@link MethodHandle} of type {@code (JexlContext,Object lhs) -> Object}
+ * Generates {@link MethodHandle} of type {@code (Object lhs,JexlContext) -> Object}
  * that corresponds to {@link SimpleNode#execute(Object, JexlContext)}.
  * 
  * @author Kohsuke Kawaguchi
@@ -36,15 +36,27 @@ class ExecuteBuilder extends AbstractBuilder{
         String methodName = ((ASTIdentifier) node.jjtGetChild(0)).getIdentifierString();
         int argc = node.jjtGetNumChildren()-1;
 
-        List<Class<?>> argType = new ArrayList<Class<?>>(argc);
-        for (int i=0; i<argc; i++)  argType.add(Object.class);
+        MethodHandle[] argFilters = new MethodHandle[argc];
+        int[] permutatePos = new int[argc+1];
+        for (int i=0; i<argc; i++) {
+            argFilters[i] = valueBuilder.build(node.jjtGetChild(i+1));
+            permutatePos[i+1] = 1;
+        }
 
-        MutableCallSite site = new MutableCallSite(methodType(Object.class, argType));
-        site.setTarget(
-            insertArguments(findBoundInstanceMethod("dispatchFallback"),0,site,methodName).asCollector(Object[].class,argc)
-        );
+        MutableCallSite site = new MutableCallSite(methodType(Object.class, objectArrayOfSize(argc+1)));
+        // h(lhs,arg1,arg2,...) => dispatchFallback(site,methodName,lsh,arg1,arg2,...)
+        MethodHandle h = insertArguments(findBoundInstanceMethod("dispatchFallback"),0,site,methodName).asCollector(Object[].class,argc+1);
+        
+        site.setTarget(h);
+        h = site.dynamicInvoker();
+        
+        // g(lhs,c,c,c,...) => h(lhs,arg1(c),arg2(c),...)
+        MethodHandle g = filterArguments(h,1,argFilters);
 
-        return site.dynamicInvoker();
+        // f(lhs,context) => g(lhs,context,context,context,...)
+        MethodHandle f = permuteArguments(g,methodType(Object.class,Object.class,JexlContext.class),permutatePos);
+
+        return f;
     }
 
     public Object dispatchFallback(MutableCallSite caller, String methodName, Object[] args) throws Throwable {
@@ -52,7 +64,7 @@ class ExecuteBuilder extends AbstractBuilder{
 
         if (m==null)    return null;    // no method found
 
-        MethodHandle target = lookup.unreflect(m);
+        MethodHandle target = lookup.unreflect(m).asType(methodType(Object.class,objectArrayOfSize(args.length)));
 
         // update the call site to use this method for discovery, then fallback
         caller.setTarget(guardWithTest(
@@ -77,4 +89,10 @@ class ExecuteBuilder extends AbstractBuilder{
         return null;    // couldn't find it
     }
 
+    private List<Class<?>> objectArrayOfSize(int n) {
+        List<Class<?>> l = new ArrayList<Class<?>>(n);
+        for (int i=0; i<n; i++)
+            l.add(Object.class);
+        return l;
+    }
 }
