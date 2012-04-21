@@ -63,7 +63,7 @@ import java.util.Map;
 import static java.lang.invoke.MethodHandles.*;
 
 /**
- * {@link ParserVisitor} that builds {@link MethodHandle} of the type {@code JexlContext -> Object}
+ * {@link ParserVisitor} that builds {@link MethodHandle} of the type {@code JexlContext -> T}
  *
  * TODO: needs to be combined with the byte code generator
  * MethodHandle composers aren't powerful enough to cover the whole expression,
@@ -206,8 +206,8 @@ public class Builder extends AbstractBuilder {
     public Object visit(ASTOrNode node, Object data) {
         return foldArguments(
                 guardWithTest(// arg list is (x,content)
-                    findStatic("coerceBoolean"),
-                    constantTrue,
+                    findStatic("isBoolean"),
+                    dropArguments(constantTrue,0,Object.class),
                     dropArguments(child(node,1),0,Object.class)),
                 child(node,0)   // evaluate lhs first
         );
@@ -216,13 +216,18 @@ public class Builder extends AbstractBuilder {
     public static Boolean coerceBoolean(Object o) {
         return Coercion.coerceBoolean(o);
     }
+    
+    public static boolean isBoolean(Object o) {
+        Boolean b = Coercion.coerceBoolean(o);
+        return b!=null && b.booleanValue();
+    }
 
     public Object visit(ASTAndNode node, Object data) {
         return foldArguments(
                 guardWithTest(// arg list is (x,content)
-                        findStatic("coerceBoolean"),
+                        findStatic("isBoolean"),
                         dropArguments(child(node, 1), 0, Object.class),
-                        constantFalse),
+                        dropArguments(constantFalse,0,Object.class)),
                 child(node, 0)   // evaluate lhs first
         );
     }
@@ -317,9 +322,74 @@ public class Builder extends AbstractBuilder {
     }
 
     public Object visit(ASTAddNode node, Object data) {
-        // TODO: trivial
-        throw new UnsupportedOperationException();
+        return binary(node,"add");
     }
+    
+    public static Object add(Object left, Object right) throws Exception {
+        /*
+         *  the spec says 'and'
+         */
+        if (left == null && right == null) {
+            return (long) 0;
+        }
+
+        // Kohsuke addition - handle null gracefully
+        if (left == null)
+            return right;
+        if (right == null)
+            return left;
+        // Kohsuke addition until here
+
+        /*
+         *  if anything is float, double or string with ( "." | "E" | "e")
+         *  coerce all to doubles and do it
+         */
+        if (left instanceof Float || left instanceof Double
+            || right instanceof Float || right instanceof Double
+            || (left instanceof String
+                  && (((String) left).indexOf(".") != -1
+                          || ((String) left).indexOf("e") != -1
+                          || ((String) left).indexOf("E") != -1)
+               )
+            || (right instanceof String
+                  && (((String) right).indexOf(".") != -1
+                          || ((String) right).indexOf("e") != -1
+                          || ((String) right).indexOf("E") != -1)
+               )
+            ) {
+
+            /*
+             * in the event that either is null and not both, then just make the
+             * null a 0
+             */
+
+            try {
+                Double l = Coercion.coerceDouble(left);
+                Double r = Coercion.coerceDouble(right);
+                return l + r;
+            } catch (java.lang.NumberFormatException nfe) {
+                /*
+                 * Well, use strings!
+                 */
+                return left.toString().concat(right.toString());
+            }
+        }
+
+        /*
+         * attempt to use Longs
+         */
+        try {
+            Long l = Coercion.coerceLong(left);
+            Long r = Coercion.coerceLong(right);
+            return l + r;
+        } catch (java.lang.NumberFormatException nfe) {
+            /*
+             * Well, use strings!
+             */
+            return left.toString().concat(right.toString());
+        }
+    }
+    
 
     public Object visit(ASTSubtractNode node, Object data) {
         // TODO: trivial

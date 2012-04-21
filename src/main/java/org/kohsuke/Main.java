@@ -13,27 +13,44 @@ import java.lang.invoke.MethodHandle;
 import java.lang.invoke.MethodHandles;
 import java.lang.invoke.MethodType;
 import java.lang.reflect.Field;
+import java.lang.reflect.Method;
 
 /**
  * @author Kohsuke Kawaguchi
  */
 public class Main {
     public static void main(String[] args) throws Throwable {
-//        MethodHandle h = build(compile("1"));
-//        Object r = h.invokeWithArguments(new HashMapContext());
-//        System.out.println(r);
-        
-        FastExpression e = build(compile("5"));
-        Assert.assertEquals(5,e.evaluate(null));
-        for (int i=0; i<10000; i++)
-            invokeRepeatedly(e,context("x","Zoo"));
-//        System.out.println(e.evaluate(context("x", "Zoo")));
+        FastExpression e;
+//        FastExpression e = build(compile("5"));
+//        Assert.assertEquals(5,e.evaluate(null));
+
+        JexlContext context = context("x", "Zoo");
+
+//        e = build(compile("x.hashCode()"));
+//        Assert.assertEquals(90042,e.evaluate(context));
+
+        // Hotspot doesn't understand that boxed 40L is a constant, so it fails to compute '42' as a constant
+//        e = build(compile("40+2"));
+//        Assert.assertEquals(42L,e.evaluate(null));
+
+//        for (int i=0; i<10000; i++)
+//            invokeRepeatedly(e, context);
+
+        test(false,"false&&false",null);
+
+    }
+
+    private static void test(Object expected, String exp, JexlContext context) throws Exception {
+        Assert.assertEquals(expected,build(compile(exp)).evaluate(context));
     }
 
     private static void invokeRepeatedly(FastExpression h, JexlContext context) throws Throwable {
         for (int i=0; i<100; i++)
-            for (int j=0; j<100; j++)
-                h.evaluate(context);
+            for (int j=0; j<100; j++) {
+//                h.evaluate(context);
+                Method m = FastExpression.class.getMethod("evaluate", JexlContext.class);
+                m.invoke(h,context);
+            }
     }
 
     public static JexlContext context(Object... args) {
