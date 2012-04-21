@@ -52,11 +52,11 @@ import org.apache.commons.jexl.parser.SimpleNode;
 
 import java.lang.invoke.MethodHandle;
 import java.lang.invoke.MethodHandles;
-import java.lang.invoke.MethodType;
 import java.lang.reflect.Method;
 import java.lang.reflect.Modifier;
 
 import static java.lang.invoke.MethodHandles.*;
+import static java.lang.invoke.MethodType.*;
 
 /**
  * @author Kohsuke Kawaguchi
@@ -69,7 +69,7 @@ public class AbstractBuilder implements ParserVisitor {
     }
 
     protected MethodHandle asReturnType(Class type, MethodHandle h) {
-        return h.asType(MethodType.methodType(type, h.type()));
+        return h.asType(methodType(type, h.type()));
     }
 
 
@@ -86,7 +86,7 @@ public class AbstractBuilder implements ParserVisitor {
         try {
             for (Method m : getClass().getMethods()) {
                 if (Modifier.isStatic(m.getModifiers()) && m.getName().equals(name))
-                    return lookup.findStatic(getClass(), name, MethodType.methodType(
+                    return lookup.findStatic(getClass(), name, methodType(
                             m.getReturnType(),
                             m.getParameterTypes()
                     ));
@@ -99,6 +99,22 @@ public class AbstractBuilder implements ParserVisitor {
         }
     }
 
+    /**
+     * Finds the instance method of the given name, bind it to 'this', and return it.
+     */
+    protected MethodHandle findBoundInstanceMethod(String name) {
+        // TODO: cache the result
+        try {
+            for (Method m : getClass().getMethods()) {
+                if (!Modifier.isStatic(m.getModifiers()) && m.getName().equals(name))
+                    return lookup.unreflect(m).bindTo(this);
+            }
+            throw new NoSuchMethodError(name);
+        } catch (IllegalAccessException e) {
+            throw handle(e);
+        }
+    }
+    
 
 // default dummy implementations of the visitor method follows
     public Object visit(SimpleNode node, Object data) {
