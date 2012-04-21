@@ -56,6 +56,7 @@ import org.apache.commons.jexl.util.Coercion;
 import java.lang.invoke.MethodHandle;
 import java.lang.invoke.MethodHandles;
 import java.lang.invoke.MethodType;
+import java.lang.invoke.MutableCallSite;
 import java.lang.reflect.Array;
 import java.lang.reflect.Method;
 import java.lang.reflect.Modifier;
@@ -78,14 +79,13 @@ import static java.lang.invoke.MethodHandles.*;
  *
  * @author Kohsuke Kawaguchi
  */
-public class Builder implements ParserVisitor {
-    MethodHandles.Lookup lookup;
-    
-    public Object visit(SimpleNode node, Object data) {
-        // huh?
-        throw new UnsupportedOperationException();
-    }
+public class Builder extends AbstractBuilder {
+    private final ExecuteBuilder executeBuilder = new ExecuteBuilder(this);
 
+    public MethodHandle build(Node n) {
+        return (MethodHandle)n.jjtAccept(this,null);
+    }
+    
     public Object visit(ASTJexlScript node, Object data) {
         return block(node);
     }
@@ -412,7 +412,8 @@ public class Builder implements ParserVisitor {
         // TODO: does MethodHandle.invokeExact() get inlined?
         Object result = null;
         while (Coercion.coerceBoolean(cond.invokeExact(context)).booleanValue()) {
-            result = body.invokeExact(context);
+//            result = body.invokeExact(context);
+            result = body.invokeWithArguments(context); // invokeExact relies on method descriptor at the call site, which Java cannot provide. ouch.
         }
 
         return result;
@@ -461,12 +462,10 @@ public class Builder implements ParserVisitor {
     }
 
     public Object visit(ASTMethod node, Object data) {
-        String methodName = ((ASTIdentifier) node.jjtGetChild(0)).getIdentifierString();
-
-        // TODO
-        throw new UnsupportedOperationException();
+        // legal syntax doesn't allow this. Instead, it gets processed by ExecuteBuilder
+        throw new AssertionError();
     }
-
+    
     public Object visit(ASTArrayAccess node, Object data) {
         // TODO
         throw new UnsupportedOperationException();
@@ -478,8 +477,7 @@ public class Builder implements ParserVisitor {
     }
 
     public Object visit(ASTReference node, Object data) {
-        // TODO
-        throw new UnsupportedOperationException();
+        return executeBuilder.build(node);
     }
 
 
@@ -488,12 +486,8 @@ public class Builder implements ParserVisitor {
         return (MethodHandle)node.jjtGetChild(i).jjtAccept(this, null);
     }
 
-    private MethodHandle ignoreReturnValue(MethodHandle h) {
-        return asReturnType(void.class,h);
-    }
-
-    private MethodHandle asReturnType(Class type, MethodHandle h) {
-        return h.asType(MethodType.methodType(type, h.type()));
+    private static MethodHandle ignoreContext(MethodHandle h) {
+        return dropArguments(h,0,JexlContext.class);
     }
     
     /**
@@ -524,37 +518,12 @@ public class Builder implements ParserVisitor {
         }
     }
     private static MethodHandle literal(Object o) {
-        return constant(Object.class,o);
+        return ignoreContext(constant(Object.class, o));
     }
     
     private static final MethodHandle constantTrue = literal(true);
     private static final MethodHandle constantFalse = literal(false);
-    private static final MethodHandle constantNull = literal(null);
+    private static final MethodHandle constantNull = literal((Object)null);
     
     
-    private IllegalAccessError handle(IllegalAccessException e) {
-        return (IllegalAccessError)new IllegalAccessError(e.getMessage()).initCause(e);
-    }
-
-    private NoSuchMethodError handle(NoSuchMethodException e) {
-        return (NoSuchMethodError)new NoSuchMethodError(e.getMessage()).initCause(e);
-    }
-
-    private MethodHandle findStatic(String name) {
-        // TODO: cache the result
-        try {
-            for (Method m : getClass().getMethods()) {
-                if (Modifier.isStatic(m.getModifiers()) && m.getName().equals(name))
-                    return lookup.findStatic(getClass(), name, MethodType.methodType(
-                            m.getReturnType(),
-                            m.getParameterTypes()
-                    ));
-            }
-            throw new NoSuchMethodError(name);
-        } catch (NoSuchMethodException e) {
-            throw handle(e);
-        } catch (IllegalAccessException e) {
-            throw handle(e);
-        }
-    }
 }
