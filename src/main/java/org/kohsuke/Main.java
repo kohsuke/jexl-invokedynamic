@@ -5,10 +5,13 @@ import org.apache.commons.jexl.ExpressionFactory;
 import org.apache.commons.jexl.JexlContext;
 import org.apache.commons.jexl.context.HashMapContext;
 import org.apache.commons.jexl.parser.Node;
+import org.junit.Assert;
 
+import java.lang.invoke.CallSite;
+import java.lang.invoke.ConstantCallSite;
 import java.lang.invoke.MethodHandle;
-import java.lang.invoke.MethodHandleProxies;
 import java.lang.invoke.MethodHandles;
+import java.lang.invoke.MethodType;
 import java.lang.reflect.Field;
 
 /**
@@ -21,6 +24,7 @@ public class Main {
 //        System.out.println(r);
         
         FastExpression e = build(compile("5"));
+        Assert.assertEquals(5,e.evaluate(null));
         for (int i=0; i<10000; i++)
             invokeRepeatedly(e,context("x","Zoo"));
 //        System.out.println(e.evaluate(context("x", "Zoo")));
@@ -46,8 +50,30 @@ public class Main {
         f.setAccessible(true);
         Node node = (Node)f.get(exp);
         MethodHandle h = new Builder().build(node);
-        FastExpression e = MethodHandleProxies.asInterfaceInstance(FastExpression.class,h);
-        return e;
+
+        // SAM uses java.lang.reflect.Proxy so doesn't really inline very well AFAICT
+        // FastExpression e = MethodHandleProxies.asInterfaceInstance(FastExpression.class,h);
+        // return e;
+        TEST = h;
+        final MethodHandle root = new DynamicIndy().invokeDynamic("unusedMethodName",MethodType.methodType(Object.class,JexlContext.class),
+                Main.class,"bsm", MethodType.methodType(CallSite.class,MethodHandles.Lookup.class,String.class,MethodType.class));
+
+        return new FastExpression() {
+            public Object evaluate(JexlContext context) {
+                try {
+                    return root.invokeWithArguments(context);
+                } catch (Throwable t) {
+                    t.printStackTrace();
+                    return t;
+                }
+            }
+        };
+    }
+
+    private static MethodHandle TEST;
+
+    public static CallSite bsm(MethodHandles.Lookup caller, String methodName, MethodType type) {
+        return new ConstantCallSite(TEST);
     }
 
     private static Expression compile(String s) throws Exception {
