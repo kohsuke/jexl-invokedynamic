@@ -1,5 +1,9 @@
 package org.kohsuke;
 
+import org.apache.commons.jexl.JexlContext;
+
+import java.lang.invoke.CallSite;
+import java.lang.invoke.ConstantCallSite;
 import java.lang.invoke.MethodHandle;
 import java.lang.invoke.MethodHandles;
 import java.lang.invoke.MethodType;
@@ -58,5 +62,22 @@ public class Sandbox {
         } catch (IllegalAccessException e) {
             throw new Error(e);
         }
+    }
+
+    /**
+     * Wraps the given method handle into a separate class that includes 'invokedynamic' via DynamicIndy,
+     * so that we can see the compiler optimization.
+     */
+    public static MethodHandle wrap(MethodHandle h) {
+        TEST = h;
+        final MethodHandle root = new DynamicIndy().invokeDynamic("unusedMethodName",h.type(),
+                Sandbox.class,"bsm", MethodType.methodType(CallSite.class,MethodHandles.Lookup.class,String.class,MethodType.class));
+        return root;
+    }
+
+    private static MethodHandle TEST;
+
+    public static CallSite bsm(MethodHandles.Lookup caller, String methodName, MethodType type) {
+        return new ConstantCallSite(TEST);
     }
 }

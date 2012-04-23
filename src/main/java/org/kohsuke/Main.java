@@ -40,8 +40,11 @@ public class Main {
 
     }
 
-    private static void test(Object expected, String exp, JexlContext context) throws Exception {
-        Assert.assertEquals(expected,build(compile(exp)).evaluate(context));
+    private static void test(Object expected, String exp, JexlContext context) throws Throwable {
+        FastExpression e = build(compile(exp));
+        Assert.assertEquals(expected, e.evaluate(context));
+        for (int i=0; i<100; i++)
+            invokeRepeatedly(e,context);
     }
 
     private static void invokeRepeatedly(FastExpression h, JexlContext context) throws Throwable {
@@ -67,14 +70,13 @@ public class Main {
         f.setAccessible(true);
         Node node = (Node)f.get(exp);
         MethodHandle h = new Builder().build(node);
+        h = h.asType(MethodType.methodType(Object.class,h.type()));
 
         // SAM uses java.lang.reflect.Proxy so doesn't really inline very well AFAICT
         // FastExpression e = MethodHandleProxies.asInterfaceInstance(FastExpression.class,h);
         // return e;
-        TEST = h;
-        final MethodHandle root = new DynamicIndy().invokeDynamic("unusedMethodName",MethodType.methodType(Object.class,JexlContext.class),
-                Main.class,"bsm", MethodType.methodType(CallSite.class,MethodHandles.Lookup.class,String.class,MethodType.class));
 
+        final MethodHandle root = Sandbox.wrap(h);
         return new FastExpression() {
             public Object evaluate(JexlContext context) {
                 try {
@@ -85,12 +87,6 @@ public class Main {
                 }
             }
         };
-    }
-
-    private static MethodHandle TEST;
-
-    public static CallSite bsm(MethodHandles.Lookup caller, String methodName, MethodType type) {
-        return new ConstantCallSite(TEST);
     }
 
     private static Expression compile(String s) throws Exception {

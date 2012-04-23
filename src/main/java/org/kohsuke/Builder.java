@@ -226,9 +226,13 @@ public class Builder extends AbstractBuilder {
         return foldArguments(
                 guardWithTest(// arg list is (x,content)
                         findStatic("isBoolean"),
-                        dropArguments(child(node, 1), 0, Object.class),
+                        dropArguments(
+                                filterReturnValue(
+                                        asReturnType(Object.class,child(node, 1)),
+                                        findStatic("isBoolean")
+                                ), 0, Object.class),
                         dropArguments(constantFalse,0,Object.class)),
-                child(node, 0)   // evaluate lhs first
+                asReturnType(Object.class,child(node, 0))   // evaluate lhs first
         );
     }
 
@@ -592,9 +596,13 @@ public class Builder extends AbstractBuilder {
     private static MethodHandle literal(Object o) {
         return ignoreContext(constant(Object.class, o));
     }
+
+    private static MethodHandle literal(Class type, Object o) {
+        return ignoreContext(constant(type, o));
+    }
     
-    private static final MethodHandle constantTrue = literal(true);
-    private static final MethodHandle constantFalse = literal(false);
+    private static final MethodHandle constantTrue = literal(boolean.class,true);
+    private static final MethodHandle constantFalse = literal(boolean.class,false);
     private static final MethodHandle constantNull = literal((Object)null);
     
     
